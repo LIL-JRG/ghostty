@@ -232,7 +232,7 @@ in
       path = fetchZigArtifact {
         name = "wayland";
         url = "https://deps.files.ghostty.org/wayland-9cb3d7aa9dc995ffafdbdef7ab86a949d0fb0e7d.tar.gz";
-        hash = "sha256-m9G72jdG30KH2yQhNBcBJ46OnekzuX0i2uIOyczkpLk=";
+        hash = "sha256-6kGR1o5DdnflHzqs3ieCmBAUTpMdOXoyfcYDXiw5xQ0=";
       };
     }
     {

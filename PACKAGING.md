@@ -81,13 +81,6 @@ for system packages which separate a build and install step, since the
 install step can then be done with a `mv` or `cp` command (from `/tmp/ghostty`
 to wherever the package manager expects it).
 
-> [!NOTE]
->
-> **Version 1.1.1 and 1.1.2 are missing `fetch-zig-cache.sh`.** This was
-> an oversight on the release process. You can use the script from version
-> 1.1.0 to fetch the Zig cache for these versions. Future versions will
-> restore the script.
-
 ### Build Options
 
 Ghostty uses the Zig build system. You can see all available build options by

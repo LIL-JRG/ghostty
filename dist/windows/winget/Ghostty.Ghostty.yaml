@@ -1,0 +1,8 @@
+# Version manifest for winget. See README.md in this directory for the
+# submission process. Replace PUBLISHER with the final package publisher
+# segment before submitting (e.g. JorgeRasgado.Ghostty).
+PackageIdentifier: Ghostty.Ghostty
+PackageVersion: 1.3.2
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0

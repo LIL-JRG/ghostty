@@ -1130,12 +1130,27 @@ pub const Windows = struct {
     }
 
     /// Compare a face's family against a requested family name. Checks
-    /// FreeType's family_name first, then falls back to the SFNT name
-    /// table entry.
+    /// FreeType's family_name first (also combined with the style name,
+    /// since CoreText-style configs reference faces by their full name,
+    /// e.g. "JetBrainsMono NFM Regular"), then falls back to the SFNT
+    /// name table entry.
     fn familyMatches(face: *Face, family: [:0]const u8) bool {
-        const ft_family: ?[*:0]const u8 = face.face.handle.*.family_name;
+        const handle = face.face.handle.*;
+        const ft_family: ?[*:0]const u8 = handle.family_name;
         if (ft_family) |f| {
-            if (std.ascii.eqlIgnoreCase(std.mem.span(f), family)) return true;
+            const fam = std.mem.span(f);
+            if (std.ascii.eqlIgnoreCase(fam, family)) return true;
+
+            const ft_style: ?[*:0]const u8 = handle.style_name;
+            if (ft_style) |s| full: {
+                var full_buf: [256]u8 = undefined;
+                const full = std.fmt.bufPrint(
+                    &full_buf,
+                    "{s} {s}",
+                    .{ fam, std.mem.span(s) },
+                ) catch break :full;
+                if (std.ascii.eqlIgnoreCase(full, family)) return true;
+            }
         }
         var buf: [256]u8 = undefined;
         const sfnt = face.name(&buf) catch "";

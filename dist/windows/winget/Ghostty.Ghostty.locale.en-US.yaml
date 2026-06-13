@@ -1,0 +1,22 @@
+PackageIdentifier: Ghostty.Ghostty
+PackageVersion: 1.3.2
+PackageLocale: en-US
+Publisher: Ghostty Windows Port
+PublisherUrl: https://ghostty.org
+PackageName: Ghostty
+PackageUrl: https://ghostty.org
+License: MIT
+LicenseUrl: https://github.com/ghostty-org/ghostty/blob/main/LICENSE
+ShortDescription: Fast, feature-rich, cross-platform terminal emulator (native Windows port).
+Description: |-
+  Ghostty is a terminal emulator that differentiates itself by being fast,
+  feature-rich, and native. This package distributes the experimental
+  native Windows port: Win32 windowing, OpenGL rendering, ConPTY,
+  win32-input-mode, native tabs and splits.
+Tags:
+  - terminal
+  - console
+  - shell
+  - conpty
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

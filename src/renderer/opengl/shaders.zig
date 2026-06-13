@@ -234,7 +234,12 @@ pub const Uniforms = extern struct {
 pub const CellText = extern struct {
     glyph_pos: [2]u32 align(8) = .{ 0, 0 },
     glyph_size: [2]u32 align(8) = .{ 0, 0 },
-    bearings: [2]i16 align(4) = .{ 0, 0 },
+    // Use i32 rather than i16: AMD's Windows OpenGL driver mishandles
+    // signed 16-bit (GL_SHORT) instanced vertex attributes fetched via
+    // vertex attrib binding, corrupting the placement of glyphs whose
+    // bearings differ from regular text (box drawing, blocks, powerline).
+    // 32-bit attributes are handled correctly; the cost is negligible.
+    bearings: [2]i32 align(8) = .{ 0, 0 },
     grid_pos: [2]u16 align(4),
     color: [4]u8 align(4),
     atlas: Atlas align(1),

@@ -1,8 +1,23 @@
+<!--
+  ⚠️ UNOFFICIAL WINDOWS PORT — NOT THE OFFICIAL GHOSTTY PROJECT ⚠️
+-->
+> [!IMPORTANT]
+> **This is an unofficial Windows port of Ghostty.** It adds a native
+> Win32 application runtime so `ghostty.exe` runs as a real windowed
+> terminal on Windows. It is **not** affiliated with or endorsed by the
+> official Ghostty project.
+>
+> - Official project & support: <https://github.com/ghostty-org/ghostty>
+> - Windows-specific build & status: **[WINDOWS.md](WINDOWS.md)**
+>
+> Ghostty, its name and logo belong to the Ghostty project (MIT-licensed).
+> This fork preserves the original MIT license and all upstream credits.
+
 <!-- LOGO -->
 <h1>
 <p align="center">
   <img src="https://github.com/user-attachments/assets/fe853809-ba8b-400b-83ab-a9a0da25be8a" alt="Logo" width="128">
-  <br>Ghostty
+  <br>Ghostty <sub>(unofficial Windows port)</sub>
 </h1>
   <p align="center">
     Fast, native, feature-rich terminal emulator pushing modern features.

@@ -1,0 +1,44 @@
+# Unofficial Windows port: build ghostty.exe and publish it as an
+# artifact. Mirrors upstream's Zig setup (mlugg/setup-zig, version read
+# from build.zig.zon).
+name: Windows Build
+
+on:
+  push:
+    branches: [windows-port]
+  pull_request:
+    branches: [windows-port]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read Zig version
+        id: zig
+        shell: bash
+        run: echo "version=$(sed -n -E 's/^\s*\.?minimum_zig_version\s*=\s*"([^"]+)".*/\1/p' build.zig.zon)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: ${{ steps.zig.outputs.version }}
+
+      - name: Build (release)
+        run: zig build -Dapp-runtime=win32 -Dtarget=native-native-gnu --release=fast
+
+      - name: Upload ghostty.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghostty-windows-x86_64
+          path: |
+            zig-out/bin/ghostty.exe
+            zig-out/share/ghostty
+            zig-out/share/terminfo
+          if-no-files-found: error

@@ -49,7 +49,9 @@ pub fn init(b: *std.Build, cfg: *const Config, deps: *const SharedDeps) !Ghostty
     // OS-specific
     switch (cfg.target.result.os.tag) {
         .windows => {
-            exe.subsystem = .Windows;
+            // Debug builds use the console subsystem so that log output
+            // is visible; release builds are pure GUI applications.
+            exe.subsystem = if (cfg.optimize == .Debug) .Console else .Windows;
             exe.addWin32ResourceFile(.{
                 .file = b.path("dist/windows/ghostty.rc"),
             });

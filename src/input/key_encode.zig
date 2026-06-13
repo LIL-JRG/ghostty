@@ -6,6 +6,7 @@ const OptionAsAlt = @import("config.zig").OptionAsAlt;
 const Terminal = @import("../terminal/Terminal.zig");
 const function_keys = @import("function_keys.zig");
 const key = @import("key.zig");
+const keycodes = @import("keycodes.zig");
 const KittyEntry = @import("kitty.zig").Entry;
 const kitty_entries = @import("kitty.zig").entries;
 
@@ -37,6 +38,10 @@ pub const Options = struct {
     /// Kitty keyboard protocol flags.
     kitty_flags: KittyFlags = .disabled,
 
+    /// Terminal mode 9001 (win32-input-mode). Requested by ConPTY on
+    /// Windows so key events are sent as full Win32 key records.
+    win32_input: bool = false,
+
     /// Determines whether the "option" key on macOS is treated
     /// as "alt" or not. See the Ghostty `macos_option-as-alt` config
     /// docs for a more detailed description of why this is needed.
@@ -49,6 +54,7 @@ pub const Options = struct {
         .alt_esc_prefix = false,
         .modify_other_keys_state_2 = false,
         .kitty_flags = .disabled,
+        .win32_input = false,
         .macos_option_as_alt = .false,
     };
 
@@ -65,6 +71,7 @@ pub const Options = struct {
             .ignore_keypad_with_numlock = t.modes.get(.ignore_keypad_with_numlock),
             .modify_other_keys_state_2 = t.flags.modify_other_keys_2,
             .kitty_flags = t.screens.active.kitty_keyboard.current(),
+            .win32_input = t.modes.get(.win32_input),
 
             // These can't be known from the terminal state.
             .macos_option_as_alt = .false,
@@ -85,6 +92,14 @@ pub fn encode(
     opts: Options,
 ) std.Io.Writer.Error!void {
     //std.log.warn("KEYENCODER event={} opts={}", .{ event, opts });
+
+    // win32-input-mode takes precedence: when hosted by ConPTY it is
+    // the most precise encoding (conhost reconstructs exact Win32 key
+    // records, including control key signals like ctrl+c).
+    if (comptime builtin.os.tag == .windows) {
+        if (opts.win32_input) return try win32Input(writer, event);
+    }
+
     return if (opts.kitty_flags.int() != 0) try kitty(
         writer,
         event,
@@ -94,6 +109,289 @@ pub fn encode(
         event,
         opts,
     );
+}
+
+/// Win32 control key state flags (wincon.h dwControlKeyState).
+const win32_cs = struct {
+    const RIGHT_ALT_PRESSED: u32 = 0x0001;
+    const LEFT_ALT_PRESSED: u32 = 0x0002;
+    const RIGHT_CTRL_PRESSED: u32 = 0x0004;
+    const LEFT_CTRL_PRESSED: u32 = 0x0008;
+    const SHIFT_PRESSED: u32 = 0x0010;
+    const NUMLOCK_ON: u32 = 0x0020;
+    const CAPSLOCK_ON: u32 = 0x0080;
+    const ENHANCED_KEY: u32 = 0x0100;
+};
+
+extern "user32" fn MapVirtualKeyW(uCode: u32, uMapType: u32) callconv(.winapi) u32;
+const MAPVK_VSC_TO_VK_EX: u32 = 3;
+
+/// Encode a key event using win32-input-mode (terminal mode 9001):
+///
+///   ESC [ Vk ; Sc ; Uc ; Kd ; Cs ; Rc _
+///
+/// where Vk is the virtual key code, Sc the scan code, Uc the UTF-16
+/// code unit, Kd the key-down flag, Cs the control key state and Rc
+/// the repeat count. ConPTY parses this back into an exact Win32
+/// KEY_EVENT_RECORD, which makes things like ctrl+c (console signals)
+/// behave identically to a classic console.
+///
+/// https://github.com/microsoft/terminal/blob/main/doc/specs/%234999%20-%20Improved%20keyboard%20handling%20in%20Conpty.md
+fn win32Input(
+    writer: *std.Io.Writer,
+    event: key.KeyEvent,
+) std.Io.Writer.Error!void {
+    // Control key state from our mods.
+    var cs: u32 = 0;
+    if (event.mods.shift) cs |= win32_cs.SHIFT_PRESSED;
+    if (event.mods.ctrl) cs |= switch (event.mods.sides.ctrl) {
+        .right => win32_cs.RIGHT_CTRL_PRESSED,
+        .left => win32_cs.LEFT_CTRL_PRESSED,
+    };
+    if (event.mods.alt) cs |= switch (event.mods.sides.alt) {
+        .right => win32_cs.RIGHT_ALT_PRESSED,
+        .left => win32_cs.LEFT_ALT_PRESSED,
+    };
+    if (event.mods.num_lock) cs |= win32_cs.NUMLOCK_ON;
+    if (event.mods.caps_lock) cs |= win32_cs.CAPSLOCK_ON;
+
+    // The native keycode column on Windows is the scancode with the
+    // 0xE000 prefix marking extended keys. Many table entries map to
+    // .unidentified so that value must not be looked up.
+    const native: u32 = native: {
+        if (event.key != .unidentified) {
+            for (keycodes.entries) |entry| {
+                if (entry.key == event.key and entry.native != 0)
+                    break :native entry.native;
+            }
+        }
+        break :native 0;
+    };
+    const extended = (native & 0xE000) == 0xE000;
+    if (extended) cs |= win32_cs.ENHANCED_KEY;
+    const sc: u32 = native & 0xFF;
+
+    // The virtual key: fixed mapping where the VK is layout-independent,
+    // otherwise derived from the scancode via the active keyboard layout.
+    const vk: u32 = vkFromKey(event.key) orelse vk: {
+        if (native != 0) break :vk MapVirtualKeyW(native, MAPVK_VSC_TO_VK_EX);
+        break :vk 0;
+    };
+
+    const kd: u32 = if (event.action == .release) 0 else 1;
+
+    // Text-producing keys emit one record per UTF-16 code unit. This
+    // covers multi-codepoint strings and non-BMP characters, which are
+    // sent as their surrogate pair halves (same as Windows Terminal).
+    if (event.utf8.len > 0) {
+        var units: [16]u16 = undefined;
+        const n = std.unicode.utf8ToUtf16Le(&units, event.utf8) catch 0;
+        if (n > 0) {
+            for (units[0..n]) |unit| {
+                try writer.print(
+                    "\x1b[{d};{d};{d};{d};{d};{d}_",
+                    .{ vk, sc, unit, kd, cs, 1 },
+                );
+            }
+            return;
+        }
+    }
+
+    // No text: reconstruct the control character a classic console
+    // would carry in the KEY_EVENT_RECORD.
+    const uc: u32 = uc: {
+        // ctrl+letter and friends.
+        if (event.mods.ctrl and !event.mods.alt) {
+            const ucp = event.unshifted_codepoint;
+            if (ucp >= 'a' and ucp <= 'z') break :uc ucp - 'a' + 1;
+            switch (ucp) {
+                ' ', '2' => break :uc 0,
+                '[', '3' => break :uc 0x1B,
+                '\\', '4' => break :uc 0x1C,
+                ']', '5' => break :uc 0x1D,
+                '6' => break :uc 0x1E,
+                '-', '7', '/' => break :uc 0x1F,
+                else => {},
+            }
+        }
+
+        // Keys that carry a control character in a classic console
+        // KEY_EVENT_RECORD. Without these (most importantly enter's
+        // \r), conhost's cooked read won't act on the key.
+        switch (event.key) {
+            .enter, .numpad_enter => break :uc 0x0D,
+            .backspace => break :uc 0x08,
+            .tab => break :uc 0x09,
+            .escape => break :uc 0x1B,
+            else => {},
+        }
+
+        break :uc 0;
+    };
+
+    try writer.print("\x1b[{d};{d};{d};{d};{d};{d}_", .{ vk, sc, uc, kd, cs, 1 });
+}
+
+test "win32Input: BMP text, control keys and surrogate pairs" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+
+    var buf: [256]u8 = undefined;
+
+    // Plain letter press carries its character.
+    {
+        var writer: std.Io.Writer = .fixed(&buf);
+        try win32Input(&writer, .{
+            .action = .press,
+            .key = .key_a,
+            .utf8 = "a",
+        });
+        try testing.expectEqualStrings("\x1b[65;30;97;1;0;1_", writer.buffered());
+    }
+
+    // Enter reconstructs \r even with no text.
+    {
+        var writer: std.Io.Writer = .fixed(&buf);
+        try win32Input(&writer, .{
+            .action = .press,
+            .key = .enter,
+        });
+        try testing.expectEqualStrings("\x1b[13;28;13;1;0;1_", writer.buffered());
+    }
+
+    // Non-BMP text (😀 U+1F600) is sent as its surrogate pair halves:
+    // 0xD83D 0xDE00.
+    {
+        var writer: std.Io.Writer = .fixed(&buf);
+        try win32Input(&writer, .{
+            .action = .press,
+            .key = .unidentified,
+            .utf8 = "\u{1F600}",
+        });
+        try testing.expectEqualStrings(
+            "\x1b[0;0;55357;1;0;1_\x1b[0;0;56832;1;0;1_",
+            writer.buffered(),
+        );
+    }
+}
+
+/// The Win32 virtual key code for keys whose VK is layout-independent.
+/// Returns null for layout-dependent keys (punctuation/OEM keys).
+fn vkFromKey(k: key.Key) ?u32 {
+    return switch (k) {
+        .key_a => 0x41,
+        .key_b => 0x42,
+        .key_c => 0x43,
+        .key_d => 0x44,
+        .key_e => 0x45,
+        .key_f => 0x46,
+        .key_g => 0x47,
+        .key_h => 0x48,
+        .key_i => 0x49,
+        .key_j => 0x4A,
+        .key_k => 0x4B,
+        .key_l => 0x4C,
+        .key_m => 0x4D,
+        .key_n => 0x4E,
+        .key_o => 0x4F,
+        .key_p => 0x50,
+        .key_q => 0x51,
+        .key_r => 0x52,
+        .key_s => 0x53,
+        .key_t => 0x54,
+        .key_u => 0x55,
+        .key_v => 0x56,
+        .key_w => 0x57,
+        .key_x => 0x58,
+        .key_y => 0x59,
+        .key_z => 0x5A,
+
+        .digit_0 => 0x30,
+        .digit_1 => 0x31,
+        .digit_2 => 0x32,
+        .digit_3 => 0x33,
+        .digit_4 => 0x34,
+        .digit_5 => 0x35,
+        .digit_6 => 0x36,
+        .digit_7 => 0x37,
+        .digit_8 => 0x38,
+        .digit_9 => 0x39,
+
+        .enter => 0x0D,
+        .escape => 0x1B,
+        .backspace => 0x08,
+        .tab => 0x09,
+        .space => 0x20,
+
+        .arrow_left => 0x25,
+        .arrow_up => 0x26,
+        .arrow_right => 0x27,
+        .arrow_down => 0x28,
+
+        .insert => 0x2D,
+        .delete => 0x2E,
+        .home => 0x24,
+        .end => 0x23,
+        .page_up => 0x21,
+        .page_down => 0x22,
+
+        .caps_lock => 0x14,
+        .num_lock => 0x90,
+        .scroll_lock => 0x91,
+        .pause => 0x13,
+        .print_screen => 0x2C,
+
+        .shift_left, .shift_right => 0x10,
+        .control_left, .control_right => 0x11,
+        .alt_left, .alt_right => 0x12,
+        .meta_left => 0x5B,
+        .meta_right => 0x5C,
+        .context_menu => 0x5D,
+
+        .numpad_0 => 0x60,
+        .numpad_1 => 0x61,
+        .numpad_2 => 0x62,
+        .numpad_3 => 0x63,
+        .numpad_4 => 0x64,
+        .numpad_5 => 0x65,
+        .numpad_6 => 0x66,
+        .numpad_7 => 0x67,
+        .numpad_8 => 0x68,
+        .numpad_9 => 0x69,
+        .numpad_multiply => 0x6A,
+        .numpad_add => 0x6B,
+        .numpad_separator => 0x6C,
+        .numpad_subtract => 0x6D,
+        .numpad_decimal => 0x6E,
+        .numpad_divide => 0x6F,
+        .numpad_enter => 0x0D,
+
+        .f1 => 0x70,
+        .f2 => 0x71,
+        .f3 => 0x72,
+        .f4 => 0x73,
+        .f5 => 0x74,
+        .f6 => 0x75,
+        .f7 => 0x76,
+        .f8 => 0x77,
+        .f9 => 0x78,
+        .f10 => 0x79,
+        .f11 => 0x7A,
+        .f12 => 0x7B,
+        .f13 => 0x7C,
+        .f14 => 0x7D,
+        .f15 => 0x7E,
+        .f16 => 0x7F,
+        .f17 => 0x80,
+        .f18 => 0x81,
+        .f19 => 0x82,
+        .f20 => 0x83,
+        .f21 => 0x84,
+        .f22 => 0x85,
+        .f23 => 0x86,
+        .f24 => 0x87,
+
+        else => null,
+    };
 }
 
 /// Perform Kitty keyboard protocol encoding of the key event.

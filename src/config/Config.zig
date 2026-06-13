@@ -4647,7 +4647,7 @@ pub fn finalize(self: *Config) !void {
 
     // Apprt-specific defaults
     switch (build_config.app_runtime) {
-        .none => {},
+        .none, .win32 => {},
         .gtk => {
             switch (self.@"gtk-single-instance") {
                 .true, .false => {},
@@ -6634,11 +6634,18 @@ pub const Keybinds = struct {
                 .{ .key = .{ .unicode = 't' }, .mods = .{ .ctrl = true, .shift = true } },
                 .{ .new_tab = {} },
             );
-            try self.set.put(
-                alloc,
-                .{ .key = .{ .unicode = 'w' }, .mods = .{ .ctrl = true, .shift = true } },
-                .{ .close_tab = .this },
-            );
+            // On Windows, ctrl+shift+w closes the focused pane (the
+            // Windows Terminal convention); closing the last pane in a
+            // tab closes the tab. Tabs can also be closed with their ✕
+            // button or middle-click. Elsewhere ctrl+shift+w closes the
+            // whole tab (overriding the close_surface binding above).
+            if (comptime builtin.os.tag != .windows) {
+                try self.set.put(
+                    alloc,
+                    .{ .key = .{ .unicode = 'w' }, .mods = .{ .ctrl = true, .shift = true } },
+                    .{ .close_tab = .this },
+                );
+            }
             try self.set.putFlags(
                 alloc,
                 .{ .key = .{ .physical = .arrow_left }, .mods = .{ .ctrl = true, .shift = true } },
@@ -9077,7 +9084,7 @@ pub const GtkTitlebarStyle = enum(c_int) {
             .{ .name = "GhosttyGtkTitlebarStyle" },
         ),
 
-        .none => void,
+        .none, .win32 => void,
     };
 };
 
@@ -9792,7 +9799,7 @@ pub const WindowDecoration = enum(c_int) {
             .{ .name = "GhosttyConfigWindowDecoration" },
         ),
 
-        .none => void,
+        .none, .win32 => void,
     };
 
     pub fn parseCLI(input_: ?[]const u8) !WindowDecoration {

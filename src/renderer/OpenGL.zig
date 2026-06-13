@@ -45,6 +45,17 @@ blending: configpkg.Config.AlphaBlending,
 /// The most recently presented target, in case we need to present it again.
 last_target: ?Target = null,
 
+/// On Windows we keep the apprt surface so the renderer thread can
+/// update the viewport and swap buffers (the win32 apprt renders fully
+/// on the renderer thread).
+win32_surface: switch (apprt.runtime) {
+    apprt.win32 => ?*apprt.Surface,
+    else => void,
+} = switch (apprt.runtime) {
+    apprt.win32 => null,
+    else => {},
+},
+
 /// NOTE: This is an error{}!OpenGL instead of just OpenGL for parity with
 ///       Metal, since it needs to be fallible so does this, even though it
 ///       can't actually fail.
@@ -52,6 +63,10 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) error{}!OpenGL {
     return .{
         .alloc = alloc,
         .blending = opts.config.blending,
+        .win32_surface = switch (comptime apprt.runtime) {
+            apprt.win32 => opts.rt_surface,
+            else => {},
+        },
     };
 }
 
@@ -136,6 +151,14 @@ fn prepareContext(getProcAddress: anytype) !void {
     const minor = gl.glad.versionMinor(@intCast(version));
     errdefer gl.glad.unload();
     log.info("loaded OpenGL {}.{}", .{ major, minor });
+    if (gl.glad.context.GetString) |getString| {
+        const vendor: [*c]const u8 = getString(gl.c.GL_VENDOR);
+        const renderer_str: [*c]const u8 = getString(gl.c.GL_RENDERER);
+        log.info("GL vendor={s} renderer={s}", .{
+            if (vendor != null) std.mem.span(vendor) else "?",
+            if (renderer_str != null) std.mem.span(renderer_str) else "?",
+        });
+    }
 
     // Need to check version before trying to enable it
     if (major < MIN_VERSION_MAJOR or
@@ -160,14 +183,21 @@ fn prepareContext(getProcAddress: anytype) !void {
 
 /// This is called early right after surface creation.
 pub fn surfaceInit(surface: *apprt.Surface) !void {
-    _ = surface;
-
     switch (apprt.runtime) {
         else => @compileError("unsupported app runtime for OpenGL"),
 
         // GTK uses global OpenGL context so we load from null.
         apprt.gtk,
         => try prepareContext(null),
+
+        // Make the context current on the main thread so that renderer
+        // initialization (swap chain, shaders, buffers) can create GPU
+        // resources; finalizeSurfaceInit releases it so the renderer
+        // thread can take it over.
+        apprt.win32 => {
+            try surface.makeContextCurrent();
+            try prepareContext(null);
+        },
 
         apprt.embedded => {
             // TODO(mitchellh): this does nothing today to allow libghostty
@@ -191,12 +221,20 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
 pub fn finalizeSurfaceInit(self: *const OpenGL, surface: *apprt.Surface) !void {
     _ = self;
     _ = surface;
+
+    switch (comptime apprt.runtime) {
+        // Release the GL context from the main thread so that the
+        // renderer thread can make it current (a WGL context can only
+        // be current on one thread at a time).
+        apprt.win32 => apprt.win32.Surface.clearContextCurrent(),
+
+        else => {},
+    }
 }
 
 /// Callback called by renderer.Thread when it begins.
 pub fn threadEnter(self: *const OpenGL, surface: *apprt.Surface) !void {
     _ = self;
-    _ = surface;
 
     switch (apprt.runtime) {
         else => @compileError("unsupported app runtime for OpenGL"),
@@ -206,6 +244,14 @@ pub fn threadEnter(self: *const OpenGL, surface: *apprt.Surface) !void {
             // tell, so we use the renderer thread to setup all the state
             // but then do the actual draws and texture syncs and all that
             // on the main thread. As such, we don't do anything here.
+        },
+
+        apprt.win32 => {
+            // Windows fully renders on the renderer thread. Make our
+            // context current and load the OpenGL functions; glad's
+            // internal loader uses wglGetProcAddress on Windows.
+            try surface.makeContextCurrent();
+            try prepareContext(null);
         },
 
         apprt.embedded => {
@@ -226,6 +272,10 @@ pub fn threadExit(self: *const OpenGL) void {
         apprt.gtk => {
             // We don't need to do any unloading for GTK because we may
             // be sharing the global bindings with other windows.
+        },
+
+        apprt.win32 => {
+            apprt.win32.Surface.clearContextCurrent();
         },
 
         apprt.embedded => {
@@ -250,17 +300,36 @@ pub fn displayRealized(self: *const OpenGL) void {
 }
 
 /// Actions taken before doing anything in `drawFrame`.
-///
-/// Right now there's nothing we need to do for OpenGL.
 pub fn drawFrameStart(self: *OpenGL) void {
-    _ = self;
+    switch (comptime apprt.runtime) {
+        // On Windows the default framebuffer follows the window size but
+        // the GL viewport does not, so we update it here. The generic
+        // renderer reads the surface size back from the viewport.
+        apprt.win32 => if (self.win32_surface) |surface| {
+            const size = surface.clientSize();
+            gl.glad.context.Viewport.?(
+                0,
+                0,
+                @intCast(size.width),
+                @intCast(size.height),
+            );
+        },
+
+        else => {},
+    }
 }
 
 /// Actions taken after `drawFrame` is done.
-///
-/// Right now there's nothing we need to do for OpenGL.
 pub fn drawFrameEnd(self: *OpenGL) void {
-    _ = self;
+    switch (comptime apprt.runtime) {
+        // Present the frame: the renderer blitted to the default
+        // framebuffer (present), now swap.
+        apprt.win32 => if (self.win32_surface) |surface| {
+            surface.swapBuffers();
+        },
+
+        else => {},
+    }
 }
 
 pub fn initShaders(

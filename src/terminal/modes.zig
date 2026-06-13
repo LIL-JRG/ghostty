@@ -297,6 +297,11 @@ const entries: []const ModeEntry = &.{
     .{ .name = "grapheme_cluster", .value = 2027 },
     .{ .name = "report_color_scheme", .value = 2031 },
     .{ .name = "in_band_size_reports", .value = 2048 },
+
+    // win32-input-mode. Requested by ConPTY (conhost) on Windows so that
+    // the terminal reports key events as full Win32 KEY_EVENT_RECORDs.
+    // https://github.com/microsoft/terminal/blob/main/doc/specs/%234999%20-%20Improved%20keyboard%20handling%20in%20Conpty.md
+    .{ .name = "win32_input", .value = 9001 },
 };
 
 test {

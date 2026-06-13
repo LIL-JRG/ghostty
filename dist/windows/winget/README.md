@@ -13,7 +13,7 @@ requieren una release pública:
 2. Sube `ghostty-1.3.2-windows-x86_64-setup.exe` a un lugar público y
    estable (típicamente GitHub Releases de tu fork).
 
-3. Calcula el hash y completa `Ghostty.Ghostty.installer.yaml`:
+3. Calcula el hash y completa `LIL-JRG.GhosttyWindows.installer.yaml`:
 
    ```powershell
    Get-FileHash zig-out\dist\ghostty-1.3.2-windows-x86_64-setup.exe -Algorithm SHA256
@@ -21,7 +21,7 @@ requieren una release pública:
 
    Rellena `InstallerUrl` y `InstallerSha256`.
 
-4. Decide el `PackageIdentifier` definitivo. `Ghostty.Ghostty` puede
+4. Decide el `PackageIdentifier` definitivo. `LIL-JRG.GhosttyWindows` puede
    estar reservado para el proyecto oficial; para un port no oficial
    usa algo como `JorgeRasgado.GhosttyWindows` (cámbialo en los TRES
    manifiestos y en los nombres de archivo).

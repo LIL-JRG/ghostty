@@ -1,17 +1,45 @@
 <!--
   ⚠️ UNOFFICIAL WINDOWS PORT — NOT THE OFFICIAL GHOSTTY PROJECT ⚠️
 -->
+
+# Ghostty for Windows <sub>(unofficial native port)</sub>
+
 > [!IMPORTANT]
-> **This is an unofficial Windows port of Ghostty.** It adds a native
-> Win32 application runtime so `ghostty.exe` runs as a real windowed
-> terminal on Windows. It is **not** affiliated with or endorsed by the
-> official Ghostty project.
->
-> - Official project & support: <https://github.com/ghostty-org/ghostty>
-> - Windows-specific build & status: **[WINDOWS.md](WINDOWS.md)**
->
-> Ghostty, its name and logo belong to the Ghostty project (MIT-licensed).
-> This fork preserves the original MIT license and all upstream credits.
+> **Unofficial Windows port of [Ghostty](https://github.com/ghostty-org/ghostty).**
+> Adds a native Win32 application runtime so `ghostty.exe` runs as a real
+> windowed terminal on Windows — no GTK, no WSL required. **Not** affiliated
+> with or endorsed by the official Ghostty project. MIT-licensed; all upstream
+> credits preserved. Ghostty's name and logo belong to the Ghostty project.
+
+<p align="center">
+  <img src=".github/assets/hero.png" alt="Ghostty running natively on Windows" width="820">
+</p>
+
+<p align="center">
+  <a href="https://github.com/LIL-JRG/ghostty/releases/latest"><b>⬇ Download</b></a>
+  &nbsp;·&nbsp;
+  <a href="WINDOWS.md"><b>Windows docs &amp; build</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/ghostty-org/ghostty"><b>Official Ghostty</b></a>
+</p>
+
+### Highlights on Windows
+
+- 🪟 Native Win32 window with GPU (OpenGL) rendering — runs `cmd`, PowerShell, `pwsh` and WSL via ConPTY
+- 🗂️ Native **tabs** (rounded pills) and **splits**
+- ⌨️ Full keyboard incl. AltGr, dead keys and IME; win32-input-mode so `Ctrl+C` and console signals behave correctly
+- 🎨 System light/dark theme detection, background opacity + acrylic blur, configurable themes & fonts
+- 📦 One-click **installer** and a **portable zip** — see [Releases](https://github.com/LIL-JRG/ghostty/releases/latest)
+
+<p align="center">
+  <img src=".github/assets/tabs.png" alt="Native tabs in Ghostty on Windows" width="820">
+</p>
+
+> Build instructions, architecture and known limitations live in **[WINDOWS.md](WINDOWS.md)**.
+
+---
+
+<!-- Everything below is the upstream Ghostty README, preserved as-is. -->
 
 <!-- LOGO -->
 <h1>
